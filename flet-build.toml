@@ -1,0 +1,5 @@
+[android]
+build_gradle_version = "8.2.1"
+kotlin_version = "1.9.22"
+# Ajoute cette ligne si ta version de Flet le permet :
+agp_version = "8.2.1"

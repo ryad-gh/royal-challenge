@@ -394,5 +394,12 @@ async def main(page: ft.Page):
     show_start_screen()
 
 
+import os
 if __name__ == "__main__":
-    ft.app(target=main, assets_dir="assets")
+    ft.app(
+        target=main,
+        assets_dir="assets",
+        view=ft.AppView.WEB_BROWSER,
+        port=int(os.environ.get("PORT", 8080)),
+        host="0.0.0.0"
+    )

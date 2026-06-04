@@ -1,13 +1,14 @@
 import flet as ft
 import random
 import asyncio
+import os
 
 # =============================================================
 #  ✅ CLIENT CONFIG — ONLY EDIT THIS SECTION PER ORDER
 # =============================================================
 
 RECIPIENT_NAME = "her name"          # The person who will play
-SENDER_NAME    = "your name"           # The person who made this
+SENDER_NAME    = "your name"         # The person who made this
 
 QUESTIONS = [
     "Do you remember the first time we met? 💭",
@@ -27,8 +28,8 @@ NO_MESSAGES = [
     "That's it. You asked for this 👿",
 ]
 
-GIFT_TITLE    = "Your surprise is ready 🎁"
-GIFT_MESSAGE  = "You completed the challenge! This was made with love just for you. ✨"
+GIFT_TITLE   = "Your surprise is ready 🎁"
+GIFT_MESSAGE = "You completed the challenge! This was made with love just for you. ✨"
 
 GALLERY_TITLE = "Our Moments ✨"
 GALLERY_CAPTIONS = [
@@ -38,11 +39,11 @@ GALLERY_CAPTIONS = [
 
 # Assets — place all files inside an /assets folder next to this script
 ASSETS = {
-    "titan":    "titan.png",       # punishment image
-    "surprise": "image.png",       # gift reveal image
-    "photo1":   "photo1.png",      # gallery photo 1
-    "photo2":   "photo2.png",      # gallery photo 2
-    "extra1":   "nounours.png",    # small decoration image
+    "titan":    "titan.png",
+    "surprise": "image.png",
+    "photo1":   "photo1.png",
+    "photo2":   "photo2.png",
+    "extra1":   "nounours.png",
     "extra2":   "fleur.png",
     "extra3":   "stitch.png",
 }
@@ -55,14 +56,14 @@ SOUNDS = {
     "yay":   "yay.mp3",
 }
 
-# Color theme — change to customize per order
+# Color theme
 THEME = {
-    "bg":          "#001F3F",
-    "card":        "#002B5B",
-    "accent":      "#FFD700",
-    "text":        "white",
-    "danger":      "#FF4444",
-    "btn_text":    "#001F3F",
+    "bg":       "#001F3F",
+    "card":     "#002B5B",
+    "accent":   "#FFD700",
+    "text":     "white",
+    "danger":   "#FF4444",
+    "btn_text": "#001F3F",
 }
 
 # =============================================================
@@ -79,27 +80,34 @@ async def main(page: ft.Page):
     page.window_height = 844
     page.padding = 0
 
-    # --- Audio setup ---
-    audios = {k: ft.Audio(src=v, autoplay=False) for k, v in SOUNDS.items()}
-    page.overlay.extend(audios.values())
-
     state = {"current": 0, "no_clicks": 0}
     warnings = ["Are you sure? 🤔", "Last chance... ⚠️"]
 
-    # ---------- helpers ----------
+    # ---------- audio helpers (JavaScript-based for web) ----------
 
     def stop_all_audio():
-        for a in audios.values():
-            try:
-                a.pause()
-            except Exception:
-                pass
-
-    def play(name):
         try:
-            audios[name].play()
+            page.run_javascript(
+                "if(window.__currentAudio){ window.__currentAudio.pause(); window.__currentAudio.currentTime=0; }"
+            )
         except Exception:
             pass
+
+    def play(name):
+        src = SOUNDS.get(name, "")
+        try:
+            page.run_javascript(f"""
+                if(window.__currentAudio){{
+                    window.__currentAudio.pause();
+                    window.__currentAudio.currentTime = 0;
+                }}
+                window.__currentAudio = new Audio('/assets/{src}');
+                window.__currentAudio.play().catch(function(){{}});
+            """)
+        except Exception:
+            pass
+
+    # ---------- UI helpers ----------
 
     def gold_btn(label, on_click, width=160, bgcolor=None, color=None):
         return ft.ElevatedButton(
@@ -178,8 +186,7 @@ async def main(page: ft.Page):
             state["no_clicks"] = 0
             show_feedback_screen(YES_MESSAGES[idx])
 
-        # progress bar
-        prog_value = (idx) / len(QUESTIONS)
+        prog_value = idx / len(QUESTIONS)
         progress_bar = ft.ProgressBar(
             value=prog_value, bgcolor="#003366",
             color=THEME["accent"], height=6
@@ -258,7 +265,7 @@ async def main(page: ft.Page):
         page.update()
 
     def retry_question():
-        audios["titan"].pause()
+        stop_all_audio()
         state["no_clicks"] = 0
         show_question()
 
@@ -293,7 +300,6 @@ async def main(page: ft.Page):
         play("happy")
         page.clean()
 
-        # confetti
         confetti_colors = ["#FFD700", "#FF69B4", "#00FF00", "#FF4500", "#00FFFF", "white"]
         confettis = [
             ft.Container(
@@ -394,7 +400,6 @@ async def main(page: ft.Page):
     show_start_screen()
 
 
-import os
 if __name__ == "__main__":
     ft.app(
         target=main,

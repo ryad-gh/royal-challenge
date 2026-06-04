@@ -101,7 +101,7 @@ async def main(page: ft.Page):
                     window.__currentAudio.pause();
                     window.__currentAudio.currentTime = 0;
                 }}
-                window.__currentAudio = new Audio('/assets/{src}');
+                window.__currentAudio = new Audio('/{src}');
                 window.__currentAudio.play().catch(function(){{}});
             """)
         except Exception:

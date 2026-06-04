@@ -7,8 +7,8 @@ import os
 #  ✅ CLIENT CONFIG — ONLY EDIT THIS SECTION PER ORDER
 # =============================================================
 
-RECIPIENT_NAME = "her name"          # The person who will play
-SENDER_NAME    = "your name"         # The person who made this
+RECIPIENT_NAME = "her name"
+SENDER_NAME    = "your name"
 
 QUESTIONS = [
     "Do you remember the first time we met? 💭",
@@ -81,52 +81,101 @@ async def main(page: ft.Page):
     state = {"current": 0, "no_clicks": 0}
     warnings = ["Are you sure? 🤔", "Last chance... ⚠️"]
 
-    # ---------- audio helpers (Howler.js — handles all browser autoplay) ----------
+    # ---------- audio ----------
+    # All audio is handled SYNCHRONOUSLY in the browser via JS click listener
+    # This bypasses the WebSocket delay and browser autoplay policy completely
 
     def init_audio():
         try:
             page.run_javascript("""
-                if(window.__howlerLoaded) return;
-                window.__howlerLoaded = true;
+                if(window.__rcAudioReady) return;
+                window.__rcAudioReady = true;
+                window.__rcNoClicks = 0;
 
-                var script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js';
-                script.onload = function() {
-                    window.__sounds = {
-                        tick:  new Howl({ src: ['/clock_tick.mp3'],  html5: true }),
-                        titan: new Howl({ src: ['/titan_sound.mp3'], html5: true }),
-                        timer: new Howl({ src: ['/timer_sound.mp3'], html5: true, loop: true }),
-                        happy: new Howl({ src: ['/happy.mp3'],       html5: true }),
-                        yay:   new Howl({ src: ['/yay.mp3'],         html5: true }),
-                    };
+                // Preload all sounds
+                var files = {
+                    tick:  '/clock_tick.mp3',
+                    titan: '/titan_sound.mp3',
+                    timer: '/timer_sound.mp3',
+                    happy: '/happy.mp3',
+                    yay:   '/yay.mp3'
                 };
-                document.head.appendChild(script);
-            """)
-        except Exception:
-            pass
+                window.__rcSounds = {};
+                for(var k in files) {
+                    window.__rcSounds[k] = new Audio(files[k]);
+                    window.__rcSounds[k].preload = 'auto';
+                }
 
-    def stop_all_audio():
-        try:
-            page.run_javascript("""
-                if(window.__sounds) {
-                    for(var k in window.__sounds) {
-                        window.__sounds[k].stop();
+                function rcStop() {
+                    for(var k in window.__rcSounds) {
+                        window.__rcSounds[k].pause();
+                        window.__rcSounds[k].currentTime = 0;
                     }
                 }
+                function rcPlay(name) {
+                    rcStop();
+                    if(window.__rcSounds[name]) {
+                        window.__rcSounds[name].play().catch(function(){});
+                    }
+                }
+                window.rcStop = rcStop;
+                window.rcPlay = rcPlay;
+
+                // SYNCHRONOUS click handler — fires before WebSocket round-trip
+                document.addEventListener('click', function(e) {
+                    var el = e.target;
+                    for(var i = 0; i < 6; i++) {
+                        if(!el) break;
+                        if(el.tagName === 'BUTTON') break;
+                        el = el.parentElement;
+                    }
+                    if(!el || el.tagName !== 'BUTTON') return;
+
+                    var text = (el.innerText || '').trim().toUpperCase();
+
+                    if(text.indexOf('BEGIN') !== -1) {
+                        window.__rcNoClicks = 0;
+                        rcPlay('timer');
+                    }
+                    else if(text.indexOf('YES') !== -1) {
+                        window.__rcNoClicks = 0;
+                        rcPlay('tick');
+                    }
+                    else if(text.indexOf('NO') !== -1) {
+                        window.__rcNoClicks = (window.__rcNoClicks || 0) + 1;
+                        if(window.__rcNoClicks >= 3) {
+                            rcPlay('titan');
+                            window.__rcNoClicks = 0;
+                        }
+                    }
+                    else if(text.indexOf('TRY AGAIN') !== -1) {
+                        window.__rcNoClicks = 0;
+                        rcPlay('timer');
+                    }
+                    else if(text.indexOf('CONTINUE') !== -1) {
+                        rcPlay('timer');
+                    }
+                    else if(text.indexOf('GIFT') !== -1) {
+                        rcPlay('happy');
+                    }
+                    else if(text.indexOf('MOMENTS') !== -1) {
+                        rcStop();
+                    }
+                    else if(text.indexOf('RESTART') !== -1 || text.indexOf('PLAY AGAIN') !== -1) {
+                        window.__rcNoClicks = 0;
+                        rcStop();
+                    }
+                }, true);
             """)
         except Exception:
             pass
 
+    # Python play/stop kept for logic sync — actual audio done by JS above
+    def stop_all_audio():
+        pass
+
     def play(name):
-        try:
-            page.run_javascript(f"""
-                if(window.__sounds && window.__sounds['{name}']) {{
-                    for(var k in window.__sounds) {{ window.__sounds[k].stop(); }}
-                    window.__sounds['{name}'].play();
-                }}
-            """)
-        except Exception:
-            pass
+        pass
 
     # ---------- UI helpers ----------
 
@@ -157,7 +206,6 @@ async def main(page: ft.Page):
     # ---------- screens ----------
 
     def show_start_screen():
-        stop_all_audio()
         state["current"]   = 0
         state["no_clicks"] = 0
         page.clean()
@@ -180,9 +228,6 @@ async def main(page: ft.Page):
         page.update()
 
     def show_question():
-        stop_all_audio()
-        play("timer")
-
         idx = state["current"]
         progress = f"Question {idx + 1} / {len(QUESTIONS)}"
 
@@ -203,8 +248,6 @@ async def main(page: ft.Page):
             page.update()
 
         def on_yes_click(e):
-            stop_all_audio()
-            play("tick")
             state["no_clicks"] = 0
             show_feedback_screen(YES_MESSAGES[idx])
 
@@ -263,8 +306,6 @@ async def main(page: ft.Page):
         page.update()
 
     def show_titan_screen():
-        stop_all_audio()
-        play("titan")
         no_msg = NO_MESSAGES[state["current"]].replace("{name}", RECIPIENT_NAME)
         page.clean()
         page.add(screen_wrapper(
@@ -287,7 +328,6 @@ async def main(page: ft.Page):
         page.update()
 
     def retry_question():
-        stop_all_audio()
         state["no_clicks"] = 0
         show_question()
 
@@ -296,8 +336,6 @@ async def main(page: ft.Page):
         if state["current"] < len(QUESTIONS):
             show_question()
         else:
-            stop_all_audio()
-            play("yay")
             show_gift_screen()
 
     def show_gift_screen():
@@ -318,8 +356,6 @@ async def main(page: ft.Page):
         page.update()
 
     async def open_chest(e):
-        stop_all_audio()
-        play("happy")
         page.clean()
 
         confetti_colors = ["#FFD700", "#FF69B4", "#00FF00", "#FF4500", "#00FFFF", "white"]
@@ -379,7 +415,6 @@ async def main(page: ft.Page):
         page.update()
 
     async def show_gallery_screen(e=None):
-        stop_all_audio()
         page.clean()
 
         fade = ft.animation.Animation(900, ft.AnimationCurve.EASE_IN_OUT)

@@ -83,26 +83,67 @@ async def main(page: ft.Page):
     state = {"current": 0, "no_clicks": 0}
     warnings = ["Are you sure? 🤔", "Last chance... ⚠️"]
 
-    # ---------- audio helpers (JavaScript-based for web) ----------
+    # ---------- audio helpers (Web Audio API for web) ----------
+
+    def init_audio():
+        try:
+            page.run_javascript("""
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                window.__ac = new AudioContext();
+                window.__sounds = {};
+                window.__currentSource = null;
+
+                var files = {
+                    tick:  '/clock_tick.mp3',
+                    titan: '/titan_sound.mp3',
+                    timer: '/timer_sound.mp3',
+                    happy: '/happy.mp3',
+                    yay:   '/yay.mp3'
+                };
+
+                // Unlock audio context on first click
+                document.addEventListener('click', function() {
+                    if(window.__ac.state !== 'running') window.__ac.resume();
+                }, true);
+
+                // Preload all sounds
+                for (var key in files) {
+                    (function(k, url) {
+                        fetch(url)
+                            .then(function(r) { return r.arrayBuffer(); })
+                            .then(function(buf) { return window.__ac.decodeAudioData(buf); })
+                            .then(function(decoded) { window.__sounds[k] = decoded; })
+                            .catch(function(){});
+                    })(key, files[key]);
+                }
+            """)
+        except Exception:
+            pass
 
     def stop_all_audio():
         try:
-            page.run_javascript(
-                "if(window.__currentAudio){ window.__currentAudio.pause(); window.__currentAudio.currentTime=0; }"
-            )
+            page.run_javascript("""
+                if(window.__currentSource) {
+                    try { window.__currentSource.stop(); } catch(e) {}
+                    window.__currentSource = null;
+                }
+            """)
         except Exception:
             pass
 
     def play(name):
-        src = SOUNDS.get(name, "")
         try:
             page.run_javascript(f"""
-                if(window.__currentAudio){{
-                    window.__currentAudio.pause();
-                    window.__currentAudio.currentTime = 0;
+                if(window.__currentSource) {{
+                    try {{ window.__currentSource.stop(); }} catch(e) {{}}
+                    window.__currentSource = null;
                 }}
-                window.__currentAudio = new Audio('/{src}');
-                window.__currentAudio.play().catch(function(){{}});
+                if(window.__sounds && window.__sounds['{name}'] && window.__ac) {{
+                    window.__currentSource = window.__ac.createBufferSource();
+                    window.__currentSource.buffer = window.__sounds['{name}'];
+                    window.__currentSource.connect(window.__ac.destination);
+                    window.__currentSource.start();
+                }}
             """)
         except Exception:
             pass
@@ -140,6 +181,7 @@ async def main(page: ft.Page):
         state["current"]   = 0
         state["no_clicks"] = 0
         page.clean()
+        init_audio()
 
         page.add(screen_wrapper(
             ft.Column([

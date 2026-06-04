@@ -37,7 +37,6 @@ GALLERY_CAPTIONS = [
     "Us, always 💛",
 ]
 
-# Assets — place all files inside an /assets folder next to this script
 ASSETS = {
     "titan":    "titan.png",
     "surprise": "image.png",
@@ -56,7 +55,6 @@ SOUNDS = {
     "yay":   "yay.mp3",
 }
 
-# Color theme
 THEME = {
     "bg":       "#001F3F",
     "card":     "#002B5B",
@@ -83,39 +81,26 @@ async def main(page: ft.Page):
     state = {"current": 0, "no_clicks": 0}
     warnings = ["Are you sure? 🤔", "Last chance... ⚠️"]
 
-    # ---------- audio helpers (Web Audio API for web) ----------
+    # ---------- audio helpers (Howler.js — handles all browser autoplay) ----------
 
     def init_audio():
         try:
             page.run_javascript("""
-                window.AudioContext = window.AudioContext || window.webkitAudioContext;
-                window.__ac = new AudioContext();
-                window.__sounds = {};
-                window.__currentSource = null;
+                if(window.__howlerLoaded) return;
+                window.__howlerLoaded = true;
 
-                var files = {
-                    tick:  '/clock_tick.mp3',
-                    titan: '/titan_sound.mp3',
-                    timer: '/timer_sound.mp3',
-                    happy: '/happy.mp3',
-                    yay:   '/yay.mp3'
+                var script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js';
+                script.onload = function() {
+                    window.__sounds = {
+                        tick:  new Howl({ src: ['/clock_tick.mp3'],  html5: true }),
+                        titan: new Howl({ src: ['/titan_sound.mp3'], html5: true }),
+                        timer: new Howl({ src: ['/timer_sound.mp3'], html5: true, loop: true }),
+                        happy: new Howl({ src: ['/happy.mp3'],       html5: true }),
+                        yay:   new Howl({ src: ['/yay.mp3'],         html5: true }),
+                    };
                 };
-
-                // Unlock audio context on first click
-                document.addEventListener('click', function() {
-                    if(window.__ac.state !== 'running') window.__ac.resume();
-                }, true);
-
-                // Preload all sounds
-                for (var key in files) {
-                    (function(k, url) {
-                        fetch(url)
-                            .then(function(r) { return r.arrayBuffer(); })
-                            .then(function(buf) { return window.__ac.decodeAudioData(buf); })
-                            .then(function(decoded) { window.__sounds[k] = decoded; })
-                            .catch(function(){});
-                    })(key, files[key]);
-                }
+                document.head.appendChild(script);
             """)
         except Exception:
             pass
@@ -123,9 +108,10 @@ async def main(page: ft.Page):
     def stop_all_audio():
         try:
             page.run_javascript("""
-                if(window.__currentSource) {
-                    try { window.__currentSource.stop(); } catch(e) {}
-                    window.__currentSource = null;
+                if(window.__sounds) {
+                    for(var k in window.__sounds) {
+                        window.__sounds[k].stop();
+                    }
                 }
             """)
         except Exception:
@@ -134,15 +120,9 @@ async def main(page: ft.Page):
     def play(name):
         try:
             page.run_javascript(f"""
-                if(window.__currentSource) {{
-                    try {{ window.__currentSource.stop(); }} catch(e) {{}}
-                    window.__currentSource = null;
-                }}
-                if(window.__sounds && window.__sounds['{name}'] && window.__ac) {{
-                    window.__currentSource = window.__ac.createBufferSource();
-                    window.__currentSource.buffer = window.__sounds['{name}'];
-                    window.__currentSource.connect(window.__ac.destination);
-                    window.__currentSource.start();
+                if(window.__sounds && window.__sounds['{name}']) {{
+                    for(var k in window.__sounds) {{ window.__sounds[k].stop(); }}
+                    window.__sounds['{name}'].play();
                 }}
             """)
         except Exception:
